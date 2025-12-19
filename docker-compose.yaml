@@ -1,0 +1,18 @@
+services:
+  n8n:
+    build: .
+    # Zorg dat deze regel hieronder staat:
+    command: start --tunnel
+    ports:
+      - "5678:5678"
+    volumes:
+      - ./n8n_data:/home/node/.n8n
+      - .:/files_from_windows
+    environment:
+      - N8N_SECURE_COOKIE=false
+      - NODE_FUNCTION_ALLOW_BUILTIN=child_process
+      - N8N_RUNNERS_ENABLED=true
+    restart: always
+
+volumes:
+  n8n_data:
