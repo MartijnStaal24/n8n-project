@@ -1,0 +1,247 @@
+{
+  "name": "AI Housing chatbot",
+  "nodes": [
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.chatInput }}",
+        "options": {
+          "systemMessage": "You are an expert Real Estate Analyst and Data Science assistant for the Dallas area. \nYour goal is to help users find undervalued properties and estimate the value of specific homes using a Machine Learning model.\n\n### 🛠️ YOUR TOOLS\nYou have access to 2 specific tools. Choose the right one based on the user's intent:\n\n1. **SEARCHING DEALS** 🏠\n   - User asks: \"Find deals\", \"Search in 75217\", \"Best investment opportunities\", \"Houses under market value\".\n   - Tool: `search_housing_deals`\n   - Parameters: Extract `zipcode` if the user mentions one (e.g., \"in 75232\"). If no zip is mentioned, leave it empty to search all of Dallas.\n\n2. **PRICE CALCULATOR / VALUATION** 🧮\n   - User says: \"I have a house with 3 beds...\", \"What is my house worth?\", \"Estimate price for...\".\n   - Tool: `calculate_home_value`\n   - Requirements: You MUST extract 4 specific values: `beds`, `baths`, `area` (sqft), and `zipcode`.\n   - IMPORTANT: If the user misses one (e.g., they forget to mention sqft), ASK for it before calling the tool. Do not guess.\n\n### 📝 RESPONSE GUIDELINES\n- **Be Concise:** Summarize the data clearly.\n- **No Hallucinations:** If a tool returns no results or an error, state that honestly.\n\n### 🎨 OUTPUT FORMATTING (Strict)\nWhen the `search_housing_deals` tool returns results, you MUST use this exact format for each house:\n\n🏠 **[Address]**\n💰 Price: $[unformattedPrice] (AI Est: $[AI_Price])\n📉 Potential: [Pct]% Undervalued\n📏 Details: [beds] Beds | [baths] Baths | [area] Sqft\n🔗 [Link text like 'View on Zillow'](detailUrl)\n\n---\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        96,
+        224
+      ],
+      "id": "c4bab2ba-e60c-440c-b6aa-62c3d141cd06",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -48,
+        432
+      ],
+      "id": "9fa8a79c-7ef9-4772-869a-6c0c7410c0d0",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "crG1BJ4GiOH9gZBh",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "={{ $json.sessionId }}",
+        "sessionKey": ""
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        112,
+        432
+      ],
+      "id": "63df015c-b199-4005-be8d-00ada576e8fb",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -224,
+        128
+      ],
+      "id": "79170614-cd34-47a6-aafa-9c3b7804547d",
+      "name": "When chat message received",
+      "webhookId": "6132bee3-3bd5-424e-bbd2-4a198f8d2fa5"
+    },
+    {
+      "parameters": {
+        "description": "Use this tool to access the Dallas real estate database and the Machine Learning model. It serves 3 distinct purposes: \n1. Finding undervalued house deals (action: 'search').\n2. Retrieving model performance metrics like accuracy, R2 score, and error margins (action: 'stats').\n3. Explaining which features (e.g., location, size) drive house prices (action: 'features').",
+        "jsCode": "const { execSync } = require('child_process');\n\n// 1. INPUT OPHALEN\n// We proberen de postcode op te halen.\n// Als je 'Test Step' gebruikt, moeten we soms kijken naar 'query' of direct inputs.\nlet zip = '';\n\ntry {\n  // Dit werkt als de AI hem aanroept\n  if (typeof $fromAI === 'function') {\n      zip = $fromAI('zipcode');\n  } \n  \n  // FALLBACK: Als $fromAI leeg is (bijv tijdens handmatig testen),\n  // kijken we of je hem zelf hebt ingevuld in het test-scherm.\n  if (!zip && $input && $input.item && $input.item.json && $input.item.json.zipcode) {\n      zip = $input.item.json.zipcode;\n  }\n} catch (e) {\n  // Niets doen, zip blijft leeg\n}\n\n// Zorg dat undefined of null een lege string wordt\nif (!zip) zip = '';\n\n// 2. COMMANDO\n// Let op de spatie na search!\nconst cmd = `python3 /files_from_windows/DallasHouseodel.py search ${zip}`;\n\ntry {\n  const output = execSync(cmd);\n  const text = output.toString();\n  \n  // JSON parseren\n  const start = text.indexOf('{');\n  const end = text.lastIndexOf('}');\n  \n  if (start !== -1 && end !== -1) {\n      return text.substring(start, end + 1);\n  }\n  return text;\n\n} catch (e) {\n  return JSON.stringify({ error: e.message });\n}",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"zipcode\": {\n      \"type\": \"string\",\n      \"description\": \"De postcode (bijv 75218)\"\n    }\n  }\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        496,
+        432
+      ],
+      "id": "f2f15da6-f5f6-4dc3-be77-6f6a04d09988",
+      "name": "search_housing_deals"
+    },
+    {
+      "parameters": {
+        "jsCode": "const { execSync } = require('child_process');\n\n// Variabelen initialiseren\nlet beds, baths, area, zip;\n\n// 1. PROBEER VIA AI (Voor de Chat)\ntry {\n    if (typeof $fromAI === 'function') {\n        beds = $fromAI('beds');\n        baths = $fromAI('baths');\n        area = $fromAI('area');\n        zip = $fromAI('zipcode');\n    }\n} catch (e) {}\n\n// 2. PROBEER VIA HANDMATIGE TEST (Voor de 'Execute Step' knop)\n// Als de AI niets heeft gegeven, kijken we of je het zelf hebt ingevuld\nif (!beds) {\n    try {\n        const item = $input.first(); // Pak het eerste item\n        if (item && item.json) {\n            // Soms staat het direct in json, soms in json.query\n            const data = item.json.query || item.json;\n            beds = data.beds || beds;\n            baths = data.baths || baths;\n            area = data.area || area;\n            zip = data.zipcode || zip;\n        }\n    } catch (e) {}\n}\n\n// 3. CHECK OF ALLES ER IS\nif (!beds || !baths || !area || !zip) {\n    return JSON.stringify({\n        error: \"Input Missing\",\n        message: \"Vul a.u.b. alle velden in (beds, baths, area, zipcode).\",\n        received: { beds, baths, area, zip }\n    });\n}\n\n// 4. UITVOEREN\nconst cmd = `python3 /files_from_windows/DallasHouseodel.py predict ${beds} ${baths} ${area} ${zip}`;\n\ntry {\n    const output = execSync(cmd);\n    const text = output.toString();\n    const start = text.indexOf('{');\n    const end = text.lastIndexOf('}');\n    \n    if (start !== -1 && end !== -1) {\n        return text.substring(start, end + 1);\n    }\n    return JSON.stringify({ error: \"No JSON\", raw: text });\n\n} catch (e) {\n    return JSON.stringify({ error: \"Execution Error\", details: e.message });\n}",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\n\t\"type\": \"object\",\n\t\"properties\": {\n\t\t\"beds\": {\n\t\t\t\"type\": \"number\",\n\t\t\t\"description\": \"Aantal slaapkamers (bijv 3)\"\n\t\t},\n\t\t\"baths\": {\n\t\t\t\"type\": \"number\",\n\t\t\t\"description\": \"Aantal badkamers (bijv 2)\"\n\t\t},\n\t\t\"area\": {\n\t\t\t\"type\": \"number\",\n\t\t\t\"description\": \"Oppervlakte in square feet (bijv 2000)\"\n\t\t},\n\t\t\"zipcode\": {\n\t\t\t\"type\": \"string\",\n\t\t\t\"description\": \"Postcode (bijv 75218)\"\n\t\t}\n\t},\n\t\"required\": [\n\t\t\"beds\",\n\t\t\"baths\",\n\t\t\"area\",\n\t\t\"zipcode\"\n\t]\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        320,
+        432
+      ],
+      "id": "f1e152e9-32ee-442e-a41e-d1d4067bf80f",
+      "name": "calculate_home_value"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -560,
+        272
+      ],
+      "id": "1f4b1210-1aac-4e7a-8ec8-ee6421a5de9d",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c008bbac-9143-47b5-8b83-e79329079cd4",
+              "name": "chatInput",
+              "value": "Zoek de top 5 ondergewaardeerde huizen in Dallas en geef een samenvatting.",
+              "type": "string"
+            },
+            {
+              "id": "6c000959-5f43-47cc-9d4a-f23348005af2",
+              "name": "sessionId",
+              "value": "daily_update",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -192,
+        336
+      ],
+      "id": "bd0ae6a8-abd4-4b79-8b19-6cff01551155",
+      "name": "Edit Fields"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "search_housing_deals": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calculate_home_value": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "caae1cde-87c9-4a0d-9bcd-f4299baacb65",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7dec0328e569209a23bab68c3d0ae92d6199bc90f81266decbbb2f00ad079129"
+  },
+  "id": "nj0JJPi5qS432Xcp",
+  "tags": []
+}
